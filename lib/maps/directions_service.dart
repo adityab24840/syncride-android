@@ -1,32 +1,32 @@
 import 'dart:convert';
 
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:latlong2/latlong.dart';
 
 import '../core/config.dart';
 
-/// Route polyline via the Directions API (covered by Google's monthly free
-/// credit at personal-project volume). No in-app voice guidance — see
-/// NavigationLauncher for that.
+/// Route polyline via OSRM's public routing API — free, no key, no billing.
+/// The public demo server (router.project-osrm.org) is rate-limited and
+/// meant for light/personal use; swap OSRM_BASE_URL for a self-hosted
+/// instance if usage grows.
 class DirectionsService {
   Future<List<LatLng>> getRoutePolyline({
     required LatLng origin,
     required LatLng destination,
   }) async {
-    final uri = Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
-      'origin': '${origin.latitude},${origin.longitude}',
-      'destination': '${destination.latitude},${destination.longitude}',
-      'mode': 'driving',
-      'key': Config.mapsApiKey,
-    });
+    final coords =
+        '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
+    final uri = Uri.parse(
+      '${Config.osrmBaseUrl}/route/v1/driving/$coords?overview=full&geometries=polyline',
+    );
 
     final res = await http.get(uri);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
-    if (body['status'] != 'OK') {
-      throw Exception('Directions API error: ${body['status']}');
+    if (body['code'] != 'Ok') {
+      throw Exception('OSRM routing error: ${body['code']}');
     }
 
-    final points = body['routes'][0]['overview_polyline']['points'] as String;
+    final points = body['routes'][0]['geometry'] as String;
     return _decodePolyline(points);
   }
 

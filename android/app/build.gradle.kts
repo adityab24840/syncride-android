@@ -1,17 +1,7 @@
-import java.io.FileInputStream
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
-}
-
-// .env (gitignored, see .env.example) doubles as the source of the Maps API
-// key for both Dart (flutter_dotenv) and this native manifest placeholder.
-val envProperties = Properties().apply {
-    val envFile = rootProject.file("../.env")
-    if (envFile.exists()) load(FileInputStream(envFile))
 }
 
 android {
@@ -33,7 +23,6 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        manifestPlaceholders["mapsApiKey"] = envProperties.getProperty("MAPS_API_KEY", "")
     }
 
     buildTypes {

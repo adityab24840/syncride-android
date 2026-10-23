@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../location/location_service.dart';
 import '../maps/directions_service.dart';
@@ -21,11 +22,12 @@ class _TripMapScreenState extends State<TripMapScreen> {
   final _socket = SocketManager();
   final _locationService = LocationService();
   final _directions = DirectionsService();
+  final _mapController = MapController();
   late final SosManager _sos;
 
-  final Map<String, Marker> _riderMarkers = {};
-  Set<Polyline> _polylines = {};
-  GoogleMapController? _mapController;
+  final Map<String, LatLng> _riderPositions = {};
+  List<LatLng> _routePoints = [];
+  LatLng? _ownPosition;
 
   @override
   void initState() {
@@ -48,23 +50,17 @@ class _TripMapScreenState extends State<TripMapScreen> {
   }
 
   void _onOwnPosition(Position position) {
+    final here = LatLng(position.latitude, position.longitude);
     _socket.sendLocation(position.latitude, position.longitude);
-    _mapController?.animateCamera(
-      CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
-    );
+    setState(() => _ownPosition = here);
+    _mapController.move(here, _mapController.camera.zoom);
   }
 
   void _onRiderLocation(Map<String, dynamic> data) {
     final id = data['riderId'] as String? ?? 'rider';
     final lat = (data['lat'] as num).toDouble();
     final lon = (data['lon'] as num).toDouble();
-    setState(() {
-      _riderMarkers[id] = Marker(
-        markerId: MarkerId(id),
-        position: LatLng(lat, lon),
-        infoWindow: InfoWindow(title: id),
-      );
-    });
+    setState(() => _riderPositions[id] = LatLng(lat, lon));
   }
 
   void _onSosReceived(Map<String, dynamic> data) {
@@ -82,15 +78,9 @@ class _TripMapScreenState extends State<TripMapScreen> {
   }
 
   Future<void> _showRoute(LatLng destination) async {
-    final origin = _riderMarkers.values.isNotEmpty
-        ? _riderMarkers.values.first.position
-        : destination;
+    final origin = _ownPosition ?? _riderPositions.values.firstOrNull ?? destination;
     final points = await _directions.getRoutePolyline(origin: origin, destination: destination);
-    setState(() {
-      _polylines = {
-        Polyline(polylineId: const PolylineId('route'), points: points, width: 5),
-      };
-    });
+    setState(() => _routePoints = points);
   }
 
   @override
@@ -104,13 +94,35 @@ class _TripMapScreenState extends State<TripMapScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Trip ${widget.tripCode}')),
-      body: GoogleMap(
-        initialCameraPosition: const CameraPosition(target: LatLng(0, 0), zoom: 14),
-        onMapCreated: (c) => _mapController = c,
-        markers: _riderMarkers.values.toSet(),
-        polylines: _polylines,
-        myLocationEnabled: true,
-        onLongPress: _showRoute,
+      body: FlutterMap(
+        mapController: _mapController,
+        options: MapOptions(
+          initialCenter: const LatLng(0, 0),
+          initialZoom: 14,
+          onLongPress: (_, point) => _showRoute(point),
+        ),
+        children: [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.syncride.syncride',
+          ),
+          if (_routePoints.isNotEmpty)
+            PolylineLayer(polylines: [
+              Polyline(points: _routePoints, strokeWidth: 5, color: Colors.blue),
+            ]),
+          MarkerLayer(markers: [
+            if (_ownPosition != null)
+              Marker(
+                point: _ownPosition!,
+                child: const Icon(Icons.my_location, color: Colors.blue),
+              ),
+            for (final entry in _riderPositions.entries)
+              Marker(
+                point: entry.value,
+                child: const Icon(Icons.location_on, color: Colors.red),
+              ),
+          ]),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: Colors.red,
@@ -118,14 +130,14 @@ class _TripMapScreenState extends State<TripMapScreen> {
         icon: const Icon(Icons.warning),
         label: const Text('SOS'),
       ),
-      bottomNavigationBar: _polylines.isEmpty
+      bottomNavigationBar: _routePoints.isEmpty
           ? null
           : SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: FilledButton.icon(
                   onPressed: () {
-                    final dest = _polylines.first.points.last;
+                    final dest = _routePoints.last;
                     NavigationLauncher.launchTurnByTurn(
                       destLat: dest.latitude,
                       destLon: dest.longitude,
