@@ -76,6 +76,11 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: _loading ? null : _joinTrip,
               child: const Text('Join trip'),
             ),
+            const SizedBox(height: 32),
+            TextButton(
+              onPressed: () => _openTrip('PREVIEW'),
+              child: const Text('Preview map (no backend)'),
+            ),
             if (_loading) const Padding(
               padding: EdgeInsets.only(top: 24),
               child: CircularProgressIndicator(),
